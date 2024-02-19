@@ -445,7 +445,6 @@ $$
 \textcolor{blue}{Thus the OLS estimator $\hat \beta$ is just the difference in means. We have proved that the difference in means is a valid estimator for the ATE. So does $\hat \beta$.}
 
 {{< pagebreak >}}
-```
 
 ## References
 

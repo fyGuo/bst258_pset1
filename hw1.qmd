@@ -277,6 +277,176 @@ $$
 
 {{< pagebreak >}}
 
+
+## Question 6
+
+```{r, cache=TRUE}
+
+# write a function to generate potential outcomes
+generate_potential_Y <- function(n){
+  Y1 <- rnorm(n, mean = 1/10, sd = 1/4)
+  Y0 <- rnorm(n, mean = 0, sd = 1/4)
+  ATE <- Y1 - Y0
+  return(data.frame(Y1, Y0, ATE))
+}
+
+# write a function to generate assignment
+assign_treatment <- function(n) {
+  # generate a data frame contains potential outcomes and treatment assignment
+  df <- generate_potential_Y(n)
+  index <- sample(1:n, n/2, replace = F)
+  df$A <-0
+  df$A[index] <- 1
+
+  # generate the observed Y
+  df$Y <- df$Y1 * df$A + df$Y0 * (1 - df$A)
+  return(df)
+}
+
+# use t-test to test the weak null hypothesis
+test_weak_null <- function(df) {
+  results <- t.test(df$Y[df$A == 1], df$Y[df$A == 0], var.equal = TRUE)
+  return(results$p.value < 0.05)
+}
+
+# use imputations to test the sharp null hypothesis
+test_sharp_null <- function(df) {
+
+    statistic <- mean(df$Y[df$A == 1]) - mean(df$Y[df$A == 0])
+    
+    # record the number of assignment for A = 1
+    num_A1 <- sum(df$A)
+    
+    new_statistic <- numeric(10000)
+    for (b in 1:10000) {
+      ind <- sample(1:dim(df)[1], num_A1, replace = F)
+      new_statistic[b] <- mean(df$Y[ind]) - mean(df$Y[-ind])
+    }
+    
+    return(statistic < quantile(new_statistic, 0.025) | statistic > quantile(new_statistic, 0.975))
+}
+
+# for fixed n, write a function to repeat the test for nsim = 1000 trials
+# use parallel to make the algorithm faster
+library(future)
+library(furrr)
+plan(multisession)
+repeat_simulation <- function(n){
+    df <- assign_treatment(n)
+    p_weak_null <- test_weak_null(df)
+    p_sharp_null <- test_sharp_null(df)
+    return(data.frame(p_weak_null, p_sharp_null))
+    }
+
+# results for 20 samples
+set.seed(321)
+furrr_options(seed = TRUE)
+res_20 <- future_map_dfr(1:1000, ~repeat_simulation(20),
+                         .options = furrr_options(seed = TRUE))
+
+res_50 <- future_map_dfr(1:1000, ~repeat_simulation(50),
+                         .options = furrr_options(seed = TRUE))
+
+res_100 <- future_map_dfr(1:1000, ~repeat_simulation(100),
+                          .options = furrr_options(seed = TRUE))
+
+res_200 <- future_map_dfr(1:1000, ~repeat_simulation(200),
+                          .options = furrr_options(seed = TRUE))
+
+res_500 <- future_map_dfr(1:1000, ~repeat_simulation(500),
+                          .options = furrr_options(seed = TRUE))
+
+# combine the results
+tmp <- data.frame(size = c(20, 50, 100, 200, 500),
+                  power_weak_null = c(mean(res_20$p_weak_null), mean(res_50$p_weak_null), mean(res_100$p_weak_null), mean(res_200$p_weak_null), mean(res_500$p_weak_null)),
+                  power_sharp_null = c(mean(res_20$p_sharp_null), mean(res_50$p_sharp_null), mean(res_100$p_sharp_null), mean(res_200$p_sharp_null), mean(res_500$p_sharp_null)))
+
+library(tidyverse)
+tmp <- tmp %>% pivot_longer(cols = -size, names_to = "test", values_to = "power")
+
+ggplot(tmp) + 
+  geom_line(aes(x = size, y = power, color = test)) +
+  geom_point(aes(x = size, y = power, color = test, shape = test))
+
+```
+- \textcolor{blue}{ The power against the two hypotheses increase with more sample size. At each sample size, the powers are similar, qne is within the expectation. The sharp null hypothesis is much stronger than th weak null hypothesis and any data rejecting the sharp null hypothesis will also reject the weak null hypothesis. However, in the the real simulation settings, the power again the weak null assumption can be a bit higher than the power against the sharp null hypothesis due to random error in the algorithm for the sharp null hypothesis.}
+ \textcolor{blue}{ In this simulation, everyone shares the same distribution for potential outcomes. Thus, the individual causal effects are equal to the average causal effect. Therefore, the power against the sharp null hypothesis is similar to the power against the weak null hypothesis.}
+
+{{< pagebreak >}}
+
+
+## Question 7
+
+### a)
+
+\textcolor{blue}{
+$$
+\begin{array}{ll}
+\min _{\alpha \cdot \beta} & \frac{1}{2 n} \sum_{i=1}^n\left(Y_i-\alpha-\beta A_i\right)^2 \\
+& \frac{\partial}{\partial \alpha} \frac{1}{2 n} \sum_{i=1}^n\left(Y_i-\alpha-\beta A_i\right)^2=0 \\
+\Rightarrow & \sum_{i=1}^n\left(Y_i-\alpha-\beta A_i\right)=0 \\
+\Rightarrow & \sum_{i=1}^n Y_i-n \alpha-\beta \sum_{i=1}^n A_i=0
+\end{array}
+$$
+}
+
+\textcolor{blue}{
+$$
+\begin{aligned}
+& \frac{\partial}{\partial \beta} \frac{1}{2 n} \sum_{i=1}\left(Y_i-\alpha-\beta A_i\right)^2=0 \\
+& \Rightarrow \quad \frac{1}{2 n} \sum_{i=1}^n 2\left(Y_i-\alpha-\beta A_i\right)\left(-A_i\right)=0 \\
+& \Rightarrow \quad \sum_{i=1}^n Y_i A_i-\alpha A_i-\beta A_i^2=0 \\
+& \left\{\begin{array}{l}
+\sum_{i=1}^n Y_i-n \alpha-\beta \sum_{i=1}^n A_i=0 \\
+\sum_{i=1}^n Y_i A_i-\alpha \Sigma A_i-\beta \Sigma A_i^2= 0
+\end{array}\right. \\
+&
+\end{aligned}
+$$
+}
+
+\textcolor{blue}{
+$$
+\begin{gathered}
+\hat{\beta}=\frac{\sum Y_i A_i-n \bar{A} \bar{Y}}{\sum A_i^2-n(\bar{A})^2} \\
+\hat{\alpha}=\frac{1}{n} \cdot \sum Y_{i-} \frac{\sum Y_i A_i-n \bar{A} \bar{Y}}{\sum A_i^2-n \bar{A}^2} \cdot \sum A_i
+\end{gathered}
+$$
+where $\bar{A}=\frac{1}{n} \sum_{i=1}^n A_i \quad \bar{Y}=\frac{1}{n} \sum_{i=1}^n Y_i$
+}
+
+
+### b)
+
+\textcolor{blue}{In class and in Problem 2, we have proved that difference in means is valid estimater for the ATE, i.e., $\bar Y_1 - \bar Y_0$}
+
+\textcolor{blue}{
+$$
+\begin{aligned}
+& \bar{Y}_1-\bar{Y}_0 \\
+= & \frac{1}{m} \sum_{i=1}^n A_i Y_i-\frac{1}{n-m} \sum_{i=1}^n\left(1-A_i\right) Y_i \\
+= & \frac{(1-m) \sum_{i=1}^n A_i Y_i-m \sum_{i=1}^n\left(1-A_i\right) Y_i}{m(n-m)} \\
+= & \frac{n \sum_{i=1}^n A_i Y_i-m \sum_{i=1}^n Y_i}{m(n-m)}
+\end{aligned}
+$$
+}
+
+\textcolor{blue}{
+$$
+\begin{aligned}
+\hat \beta = \frac{\sum Y_i A_i-n \bar{A} \bar{Y}}{\sum A_i^2-n(\bar{A})^2} & =\frac{\sum_{i=1}^n Y_i A_i-\sum_{i=1}^n A_i \cdot \frac{1}{n} \sum_{i=1}^n Y_i}{\sum_{i=1}^n A_i^2-n\left(\frac{1}{n} \sum_{i=1}^n A_i\right)^2} \\
+& =\frac{\sum_{i=1}^n Y_i A_i-m \cdot \frac{1}{n} \cdot \sum_{i=1}^n Y_i}{m-\frac{1}{n} \cdot m^2} \\
+& =\frac{n \sum_{i=1}^n Y_i A_i-m \sum_{i=1}^n Y_i}{m n-m^2} \\
+& =\bar{Y}_1-\bar{Y}_0
+\end{aligned}
+$$
+}
+
+\textcolor{blue}{Thus the OLS estimator $\hat \beta$ is just the difference in means. We have proved that the difference in means is a valid estimator for the ATE. So does $\hat \beta$.}
+
+{{< pagebreak >}}
+```
+
 ## References
 
 ::: {#refs}
